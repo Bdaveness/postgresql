@@ -1,0 +1,69 @@
+--Exploratory Data Analysis
+
+	--See MAX number of laid off employees and the percentage of workforce for that company
+SELECT MAX(total_laid_off), MAX(percentage_laid_off)
+FROM layoffs_staging;
+
+	--Out of all the companys that closed, which ones had the most total number of employees laid off 
+	--and how much money did they raise
+SELECT *
+FROM layoffs_staging
+WHERE percentage_laid_off = 1 AND total_laid_off IS NOT NULL
+ORDER BY total_laid_off DESC;
+
+SELECT *
+FROM layoffs_staging
+WHERE percentage_laid_off = 1 AND funds_raised_millions IS NOT NULL
+ORDER BY funds_raised_millions DESC;
+
+	--See which company had the most total number of laid off employees. Can substitute industry and country for company.
+SELECT company, SUM(total_laid_off)
+FROM layoffs_staging
+WHERE total_laid_off IS NOT NULL
+GROUP BY company
+ORDER BY 2 DESC;
+
+
+	--See what the date range is of data and see the total number of laid off employees for that year
+SELECT MIN(date), MAX(date)
+FROM layoffs_staging;
+
+SELECT EXTRACT(YEAR FROM date), SUM(total_laid_off)
+FROM layoffs_staging
+WHERE total_laid_off IS NOT NULL
+GROUP BY EXTRACT(YEAR FROM date)
+ORDER BY 2 DESC;
+
+	--See rolling total of layoffs per month using a window function and a CTE
+WITH rolling_total AS
+(
+SELECT SUBSTRING(TEXT(date) FROM 1 FOR 7) AS month, SUM(total_laid_off) as total_off
+FROM layoffs_staging
+WHERE SUBSTRING(TEXT(date) FROM 1 FOR 7) IS NOT NULL
+GROUP BY month
+ORDER BY 1
+)
+
+SELECT month, total_off, SUM(total_off) OVER(ORDER BY month) as rolling_total_sum
+FROM rolling_total;
+
+	--Using CTEs and window functions, see who are the top 5 companies per year in terms of total number of employees laid off
+WITH company_year  (company, years, total_laid_off) AS
+(
+SELECT company, EXTRACT(YEAR FROM date), SUM(total_laid_off)
+FROM layoffs_staging
+GROUP BY company, EXTRACT(YEAR FROM date)
+), 
+company_year_rank AS
+(
+SELECT *, 
+DENSE_RANK() OVER(PARTITION BY years ORDER BY total_laid_off DESC) AS ranking
+FROM company_year
+WHERE total_laid_off IS NOT NULL AND years IS NOT NULL
+ORDER BY ranking, years
+)
+
+SELECT *
+FROM company_year_rank
+WHERE ranking <=5
+ORDER BY years, ranking;
