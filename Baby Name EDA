@@ -1,0 +1,132 @@
+--Project found at Maven Analytics
+
+--Find the overall most popular girl names 
+--and show how they have changed in popularity rankings over the years.
+
+	--Most popular girl name by total number of births
+SELECT name, SUM(births) AS total_births
+FROM baby_name
+WHERE gender = 'F'
+GROUP BY name
+ORDER BY total_births DESC; --Jessica
+
+	--Ranking per year for the top girl (Jessica) name from 1980 to 2009
+	--CTE for total births per year/name and window function for rankings per year.
+	--Both inside subquery so outerquery can filter on name.
+SELECT *
+FROM
+	(WITH female_names AS (
+	SELECT year, name, SUM(births) AS total_births
+	FROM baby_name
+	WHERE gender = 'F'
+	GROUP BY year, name
+	)
+	
+	SELECT year, name, total_births, 
+		ROW_NUMBER()OVER(PARTITION BY year ORDER BY total_births DESC)
+	FROM female_names)
+WHERE name = 'Jessica';
+
+
+--Find the top 3 girl names for each year, 
+--and also top male and female names for each decade.
+
+	--Reused code from above but changed condition of outerquery to show top 3 female
+	--names per year.
+SELECT *
+FROM
+	(WITH female_names AS (
+	SELECT year, name, SUM(births) AS total_births
+	FROM baby_name
+	WHERE gender = 'F'
+	GROUP BY year, name
+	)
+	
+	SELECT year, name, total_births, 
+		ROW_NUMBER()OVER(PARTITION BY year ORDER BY total_births DESC) AS popularity
+	FROM female_names)
+WHERE popularity <= 3;
+
+	--Reused code from above but added CASE statement to create decade bins.
+	--Removed CTE condition so that it included both male and female names
+SELECT *
+FROM
+	(WITH names_per_decade AS (
+	SELECT 
+		CASE 
+			WHEN year BETWEEN 1980 AND 1989 THEN '1980s'
+			WHEN year BETWEEN 1990 AND 1999 THEN '1990s'
+			WHEN year BETWEEN 2000 AND 2009 THEN '2000s'
+		END AS decade,
+		gender, name, SUM(births) AS total_births
+	FROM baby_name
+	GROUP BY gender, decade, name
+	)
+	
+	SELECT decade, gender, name, total_births, 
+		ROW_NUMBER()OVER(PARTITION BY decade, gender ORDER BY total_births DESC) AS popularity
+	FROM names_per_decade)
+WHERE popularity <= 3;
+
+
+--Find the number of babies born in each region, 
+--and also return the top 3 girl names and top 3 boy names within each region.
+
+	--Join region and baby_name table to get total births in each region.
+SELECT r.region, SUM(bn.births) AS total_births
+FROM regions r
+JOIN baby_name bn
+ON r.state = bn.state
+GROUP BY region
+ORDER BY total_births DESC;
+	
+	--Reused above code as a CTE to use in finding the top 3 names for each
+	--gender in each region.
+SELECT *
+FROM
+	(WITH region_names AS (
+	SELECT r.region, bn.gender, bn.name, SUM(bn.births) AS total_births
+	FROM regions r
+	JOIN baby_name bn
+	ON r.state = bn.state
+	GROUP BY r.region, bn.name, bn.gender
+	)
+	
+	SELECT region, gender, name, total_births,
+		row_number()over(PARTITION BY region, gender ORDER BY total_births DESC) AS popularity
+	FROM region_names)
+WHERE popularity <= 3;
+
+--Find the most popular androgynous names, the shortest and longest names, 
+--and the state with the highest percent of babies named "Chris".
+	--Finding which names are for both genders
+SELECT name, COUNT(DISTINCT gender) AS total_genders, SUM(births) as total_births
+FROM baby_name
+GROUP BY name
+HAVING COUNT(DISTINCT gender) = 2
+ORDER BY total_births DESC
+LIMIT 10;
+
+	--Finding the longest and shortest names, change "order by len_name"
+	--from DESC to without to switch between the two.
+SELECT name, LENGTH(name) as len_name, SUM(births) AS total_births
+FROM baby_name
+GROUP BY name
+ORDER BY len_name, total_births DESC
+LIMIT 10;
+
+	--Finding the percentage of names called Chris in each state.
+SELECT state, num_chris/num_babies * 100 AS pct_chris
+FROM
+	(WITH count_chris AS (SELECT state, CAST(SUM(births) AS numeric) as num_chris
+	FROM baby_name
+	WHERE name = 'Chris'
+	GROUP BY state),
+	count_all AS (SELECT state, CAST(SUM(births) AS numeric) as num_babies
+	FROM baby_name
+	GROUP BY state)
+	
+	SELECT cc.state, cc.num_chris, ca.num_babies
+	FROM count_chris cc JOIN count_all ca
+	ON cc.state = ca.state) AS state_chris_all
+ORDER BY pct_chris DESC;
